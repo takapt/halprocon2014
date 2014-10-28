@@ -27,7 +27,7 @@ Action Answer::GetNextAction(const StageAccessor& aStageAccessor)
     const Vec2& next = lotus.pos();
     const Vec2& nextnext = lotuses[(player.targetLotusNo() + 1) % aStageAccessor.lotuses().count()].pos();
     const Vec2 target = next + (nextnext - next).getNormalized(lotus.radius() * 0.9);
-    Vec2 vec = target - player.pos();
+    const Vec2 vec = target - player.pos();
 
     if (player.accelCount() == 0)
         return Action::Wait();
