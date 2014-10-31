@@ -73,7 +73,7 @@ int main(int argc, const char* argv[])
         switch (operation) {
         case Operation_Normal:
             sSim.outputResult();
-            sSim.debug();
+//             sSim.debug();
             break;
 
         case Operation_NoDebug:
