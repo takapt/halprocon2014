@@ -13,7 +13,7 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include <algorithm>
+// #include <algorithm>
 #include <functional>
 #include <sstream>
 #include <complex>
@@ -50,3 +50,4 @@ void fast_io() { cin.tie(0); ios::sync_with_stdio(false); }
 bool in_rect(int x, int y, int w, int h) { return 0 <= x && x < w && 0 <= y && y < h; }
 
 
+#define all(a) (a).begin(), (a).end()
