@@ -81,7 +81,7 @@ Vec2 decel_vel(const Vec2& vel)
 
 const int CharaAccelCountMax = 9; // -pgでコンパイルするために
 
-const int MAX_SEARCH_TURN = 100;
+const int MAX_SEARCH_TURN = 60;
 class ActionStrategy
 {
 public:
