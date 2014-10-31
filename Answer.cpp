@@ -79,7 +79,9 @@ Vec2 decel_vel(const Vec2& vel)
         return Vec2();
 }
 
-const int MAX_SEARCH_TURN = 400;
+const int CharaAccelCountMax = 9; // -pgでコンパイルするために
+
+const int MAX_SEARCH_TURN = 100;
 class ActionStrategy
 {
 public:
@@ -159,13 +161,13 @@ public:
 
         const int MAX_VEL_LEVEL = 14; // Parameter::CharaAccelSpeed / Parameter::CharaDecelSpeed
         const ushort UNVISITED = -1;
-        Vec2 dp_pos[MAX_SEARCH_TURN][Parameter::CharaAccelCountMax + 1][MAX_VEL_LEVEL];
-        Vec2 dp_vel[MAX_SEARCH_TURN][Parameter::CharaAccelCountMax + 1][MAX_VEL_LEVEL];
-        uchar dp_passed_lotus[MAX_SEARCH_TURN][Parameter::CharaAccelCountMax + 1][MAX_VEL_LEVEL];
-        ushort dp_prev[MAX_SEARCH_TURN][Parameter::CharaAccelCountMax + 1][MAX_VEL_LEVEL];
-        Action dp_action[MAX_SEARCH_TURN][Parameter::CharaAccelCountMax + 1][MAX_VEL_LEVEL];
+        static Vec2 dp_pos[MAX_SEARCH_TURN][CharaAccelCountMax + 1][MAX_VEL_LEVEL];
+        static Vec2 dp_vel[MAX_SEARCH_TURN][CharaAccelCountMax + 1][MAX_VEL_LEVEL];
+        static uchar dp_passed_lotus[MAX_SEARCH_TURN][CharaAccelCountMax + 1][MAX_VEL_LEVEL];
+        static ushort dp_prev[MAX_SEARCH_TURN][CharaAccelCountMax + 1][MAX_VEL_LEVEL];
+        static Action dp_action[MAX_SEARCH_TURN][CharaAccelCountMax + 1][MAX_VEL_LEVEL];
 
-        erep(dp_i, search_turns) erep(accel_count, Parameter::CharaAccelCountMax) rep(vel_level, MAX_VEL_LEVEL)
+        erep(dp_i, search_turns) erep(accel_count, CharaAccelCountMax) rep(vel_level, MAX_VEL_LEVEL)
             dp_prev[dp_i][accel_count][vel_level] = UNVISITED;
         dp_pos[0][player.accelCount()][0] = player.pos();
         dp_vel[0][player.accelCount()][0] = player.vel();
@@ -178,10 +180,10 @@ public:
         {
             const int add_accel_count = --accel_wait_turn == 0;
             if (accel_wait_turn == 0)
-                accel_wait_turn = Parameter::CharaAccelCountMax + 1;
+                accel_wait_turn = CharaAccelCountMax + 1;
 
             bool found_goal = false;
-            erep(accel_count, Parameter::CharaAccelCountMax) rep(vel_level, MAX_VEL_LEVEL)
+            erep(accel_count, CharaAccelCountMax) rep(vel_level, MAX_VEL_LEVEL)
             {
                 if (dp_prev[dp_i][accel_count][vel_level] == UNVISITED)
                     continue;
@@ -195,12 +197,12 @@ public:
 
                 // wait
                 {
-                    const int naccel_count = min(Parameter::CharaAccelCountMax, accel_count + add_accel_count);
+                    const int naccel_count = min(CharaAccelCountMax, accel_count + add_accel_count);
                     const int nvel_level = max(0, vel_level - 1);
                     const Vec2 next_pos = cur_pos + cur_vel + field.flowVel();
                     const int next_passed_lotus = passed_lotus + (Collision::IsHit(Circle(next_pos, Parameter::CharaRadius()), lotuses[target_lotus].region()));
                     const int next_target_lotus = next_passed_lotus % lotuses.count();
-                    const Vec2& next_target_pos = target_pos[next_target_lotus] - cur_pos.dist(target_pos[next_passed_lotus]) * field.flowVel();
+                    const Vec2& next_target_pos = target_pos[next_target_lotus] - cur_pos.dist(target_pos[next_target_lotus]) * field.flowVel();
 
                     if (dp_prev[dp_i + 1][naccel_count][nvel_level] == UNVISITED ||
                         (
@@ -212,7 +214,7 @@ public:
                         )
                        )
                     {
-                        assert(0 <= naccel_count && naccel_count <= Parameter::CharaAccelCountMax);
+                        assert(0 <= naccel_count && naccel_count <= CharaAccelCountMax);
                         assert(0 <= nvel_level && nvel_level <= MAX_VEL_LEVEL);
 
                         dp_pos[dp_i + 1][naccel_count][nvel_level] = next_pos;
@@ -229,15 +231,15 @@ public:
                 // accel
                 if (accel_count > 0)
                 {
-                    const int naccel_count = min(Parameter::CharaAccelCountMax, accel_count - 1 + add_accel_count);
+                    const int naccel_count = min(CharaAccelCountMax, accel_count - 1 + add_accel_count);
                     const int nvel_level = MAX_VEL_LEVEL - 1;
                     const Vec2 acceled_vel = (cur_target_pos - cur_pos).getNormalized(Parameter::CharaAccelSpeed());
                     const Vec2 next_pos = cur_pos + acceled_vel + field.flowVel();
                     const int next_passed_lotus = passed_lotus + (Collision::IsHit(Circle(next_pos, Parameter::CharaRadius()), lotuses[target_lotus].region()));
                     const int next_target_lotus = next_passed_lotus % lotuses.count();
-                    const Vec2& next_target_pos = target_pos[next_target_lotus] - cur_pos.dist(target_pos[next_passed_lotus]) * field.flowVel();
+                    const Vec2& next_target_pos = target_pos[next_target_lotus] - cur_pos.dist(target_pos[next_target_lotus]) * field.flowVel();
 
-                    assert(0 <= naccel_count && naccel_count <= Parameter::CharaAccelCountMax);
+                    assert(0 <= naccel_count && naccel_count <= CharaAccelCountMax);
                     assert(0 <= nvel_level && nvel_level <= MAX_VEL_LEVEL);
 
                     if (dp_prev[dp_i + 1][naccel_count][nvel_level] == UNVISITED ||
@@ -271,7 +273,7 @@ public:
         int best_passed_lotus = -1;
         float best_sq_dist = -1;
         int best_accel_count = -1, best_vel_level = -1;
-        erep(accel_count, Parameter::CharaAccelCountMax) rep(vel_level, MAX_VEL_LEVEL)
+        erep(accel_count, CharaAccelCountMax) rep(vel_level, MAX_VEL_LEVEL)
         {
             const int passed_lotus = dp_passed_lotus[searching_turn][accel_count][vel_level];
             if (dp_prev[searching_turn][accel_count][vel_level] != UNVISITED &&
@@ -301,7 +303,7 @@ public:
 
             int paccel_count = pcc_first(dp_prev[dp_i][accel_count][vel_level]);
             int pvel_level = pcc_second(dp_prev[dp_i][accel_count][vel_level]);
-            assert(0 <= paccel_count && paccel_count <= Parameter::CharaAccelCountMax);
+            assert(0 <= paccel_count && paccel_count <= CharaAccelCountMax);
             assert(0 <= pvel_level && pvel_level <= MAX_VEL_LEVEL);
             accel_count = paccel_count;
             vel_level = pvel_level;
@@ -336,7 +338,7 @@ Action Answer::GetNextAction(const StageAccessor& aStageAccessor)
 
     if (action_strategy.index() + 1 >= action_strategy.size() * 8 / 10 || !action_strategy.is_equal_strategy(player))
     {
-//         const int turns = solver::min(MAX_SEARCH_TURN - 1, 30 + 5 * (player.passedTurn() - prev));
+//         const int turns = solver::min(MAX_SEARCH_TURN - 1, MAX_SEARCH_TURN / 2 + player.passedTurn());
         const int turns = MAX_SEARCH_TURN - 1;
         action_strategy.search(aStageAccessor, turns);
         prev = player.passedTurn();
