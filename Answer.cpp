@@ -70,18 +70,26 @@ inline
 T abs(const T& n) { return n >= 0 ? n : -n; }
 
 
-Vec2 decel_vel(const Vec2& vel)
+// Vec2 decel_vel(const Vec2& vel)
+// {
+//     const float speed = max<float>(0, vel.length() - Parameter::CharaDecelSpeed());
+//     if (speed > 0)
+//         return vel.getNormalized(speed);
+//     else
+//         return Vec2();
+// }
+void decel_vel(Vec2& vel)
 {
     const float speed = max<float>(0, vel.length() - Parameter::CharaDecelSpeed());
     if (speed > 0)
-        return vel.getNormalized(speed);
+        vel.normalize(speed);
     else
-        return Vec2();
+        vel.reset();
 }
 
 const int CharaAccelCountMax = 9; // -pgでコンパイルするために
 
-const int MAX_SEARCH_TURN = 60;
+const int MAX_SEARCH_TURN = 200;
 class ActionStrategy
 {
 public:
@@ -150,13 +158,20 @@ public:
         const LotusCollection& lotuses = stage_accessor.lotuses();
         const Field& field = stage_accessor.field();
 
+        const float flow_vel_y = field.flowVel().y;
+        const bool flow = flow_vel_y > 0;
+
         Vec2 target_pos[Parameter::LotusCountMax];
+        float collision_squared_dist[Parameter::LotusCountMax];
         rep(target_lotus, lotuses.count())
         {
             const Lotus& lotus = lotuses[target_lotus];
             const Vec2& next = lotus.pos();
             const Vec2& nextnext = lotuses[(target_lotus + 1) % lotuses.count()].pos();
             target_pos[target_lotus] = next + (nextnext - next).getNormalized(lotus.radius());
+
+            const float collision_dist = lotus.radius() + Parameter::CharaRadius();
+            collision_squared_dist[target_lotus] = collision_dist * collision_dist - 1e-7;
         }
 
         const int MAX_VEL_LEVEL = 14; // Parameter::CharaAccelSpeed / Parameter::CharaDecelSpeed
@@ -173,6 +188,8 @@ public:
         dp_vel[0][player.accelCount()][0] = player.vel();
         dp_passed_lotus[0][player.accelCount()][0] = player.passedLotusCount();
         dp_prev[0][player.accelCount()][0] = 0; // mark visited
+
+        const Action WAIT_ACTION = Action::Wait();
 
         int searching_turn = 0;
         int accel_wait_turn = player.accelWaitTurn();
@@ -199,10 +216,17 @@ public:
                 {
                     const int naccel_count = min(CharaAccelCountMax, accel_count + add_accel_count);
                     const int nvel_level = max(0, vel_level - 1);
-                    const Vec2 next_pos = cur_pos + cur_vel + field.flowVel();
-                    const int next_passed_lotus = passed_lotus + (Collision::IsHit(Circle(next_pos, Parameter::CharaRadius()), lotuses[target_lotus].region()));
+
+                    Vec2 next_pos = cur_vel;
+                    next_pos.y += field.flowVel().y;
+                    next_pos += cur_pos;
+
+                    const int next_passed_lotus = passed_lotus + (next_pos.squareDist(lotuses[target_lotus].pos()) < collision_squared_dist[target_lotus]);
                     const int next_target_lotus = next_passed_lotus % lotuses.count();
-                    const Vec2& next_target_pos = target_pos[next_target_lotus] - cur_pos.dist(target_pos[next_target_lotus]) * field.flowVel();
+
+                    Vec2 next_target_pos = target_pos[next_target_lotus];
+                    if (flow)
+                        next_target_pos.y -= cur_pos.dist(target_pos[next_target_lotus]) * flow_vel_y;
 
                     if (dp_prev[dp_i + 1][naccel_count][nvel_level] == UNVISITED ||
                         (
@@ -217,11 +241,17 @@ public:
                         assert(0 <= naccel_count && naccel_count <= CharaAccelCountMax);
                         assert(0 <= nvel_level && nvel_level <= MAX_VEL_LEVEL);
 
+                        Vec2 next_vel = cur_vel;
+                        decel_vel(next_vel);
+
                         dp_pos[dp_i + 1][naccel_count][nvel_level] = next_pos;
-                        dp_vel[dp_i + 1][naccel_count][nvel_level] = decel_vel(cur_vel);
+
+//                         dp_vel[dp_i + 1][naccel_count][nvel_level] = decel_vel(cur_vel);
+                        dp_vel[dp_i + 1][naccel_count][nvel_level] = next_vel;
+
                         dp_passed_lotus[dp_i + 1][naccel_count][nvel_level] = next_passed_lotus;
                         dp_prev[dp_i + 1][naccel_count][nvel_level] = pcc(accel_count, vel_level);
-                        dp_action[dp_i + 1][naccel_count][nvel_level] = Action::Wait();
+                        dp_action[dp_i + 1][naccel_count][nvel_level] = WAIT_ACTION;
 
                         if (next_passed_lotus == lotuses.count() * Parameter::StageRoundCount)
                             found_goal = true;
@@ -233,11 +263,21 @@ public:
                 {
                     const int naccel_count = min(CharaAccelCountMax, accel_count - 1 + add_accel_count);
                     const int nvel_level = MAX_VEL_LEVEL - 1;
-                    const Vec2 acceled_vel = (cur_target_pos - cur_pos).getNormalized(Parameter::CharaAccelSpeed());
-                    const Vec2 next_pos = cur_pos + acceled_vel + field.flowVel();
-                    const int next_passed_lotus = passed_lotus + (Collision::IsHit(Circle(next_pos, Parameter::CharaRadius()), lotuses[target_lotus].region()));
+
+//                     Vec2 acceled_vel = (cur_target_pos - cur_pos).getNormalized(Parameter::CharaAccelSpeed());
+                    Vec2 acceled_vel = (cur_target_pos - cur_pos);
+                    acceled_vel.normalize(Parameter::CharaAccelSpeed());
+
+                    Vec2 next_pos = acceled_vel;
+                    next_pos.y += flow_vel_y;
+                    next_pos += cur_pos;
+
+                    const int next_passed_lotus = passed_lotus + (next_pos.squareDist(lotuses[target_lotus].pos()) < collision_squared_dist[target_lotus]);
                     const int next_target_lotus = next_passed_lotus % lotuses.count();
-                    const Vec2& next_target_pos = target_pos[next_target_lotus] - cur_pos.dist(target_pos[next_target_lotus]) * field.flowVel();
+
+                    Vec2 next_target_pos = target_pos[next_target_lotus];
+                    if (flow)
+                        next_target_pos.y -= cur_pos.dist(target_pos[next_target_lotus]) * flow_vel_y;
 
                     assert(0 <= naccel_count && naccel_count <= CharaAccelCountMax);
                     assert(0 <= nvel_level && nvel_level <= MAX_VEL_LEVEL);
@@ -253,7 +293,11 @@ public:
                        )
                     {
                         dp_pos[dp_i + 1][naccel_count][nvel_level] = next_pos;
-                        dp_vel[dp_i + 1][naccel_count][nvel_level] = decel_vel(acceled_vel);
+
+//                         dp_vel[dp_i + 1][naccel_count][nvel_level] = decel_vel(acceled_vel);
+                        decel_vel(acceled_vel);
+                        dp_vel[dp_i + 1][naccel_count][nvel_level] = acceled_vel;
+
                         dp_passed_lotus[dp_i + 1][naccel_count][nvel_level] = next_passed_lotus;
                         dp_prev[dp_i + 1][naccel_count][nvel_level] = pcc(accel_count, vel_level);
                         dp_action[dp_i + 1][naccel_count][nvel_level] = Action::Accel(cur_target_pos);
@@ -336,7 +380,7 @@ Action Answer::GetNextAction(const StageAccessor& aStageAccessor)
 {
     const Chara& player = aStageAccessor.player();
 
-    if (action_strategy.index() + 1 >= action_strategy.size() * 8 / 10 || !action_strategy.is_equal_strategy(player))
+    if (action_strategy.index() + 1 >= action_strategy.size() * 6 / 10 || !action_strategy.is_equal_strategy(player))
     {
 //         const int turns = solver::min(MAX_SEARCH_TURN - 1, MAX_SEARCH_TURN / 2 + player.passedTurn());
         const int turns = MAX_SEARCH_TURN - 1;
