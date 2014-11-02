@@ -89,7 +89,8 @@ void decel_vel(Vec2& vel)
 
 const int CharaAccelCountMax = 9; // -pgでコンパイルするために
 
-const int MAX_SEARCH_TURN = 200;
+
+const int MAX_SEARCH_TURN = 400;
 class ActionStrategy
 {
 public:
@@ -241,12 +242,11 @@ public:
                         assert(0 <= naccel_count && naccel_count <= CharaAccelCountMax);
                         assert(0 <= nvel_level && nvel_level <= MAX_VEL_LEVEL);
 
-                        Vec2 next_vel = cur_vel;
-                        decel_vel(next_vel);
-
                         dp_pos[dp_i + 1][naccel_count][nvel_level] = next_pos;
 
 //                         dp_vel[dp_i + 1][naccel_count][nvel_level] = decel_vel(cur_vel);
+                        Vec2 next_vel = cur_vel;
+                        decel_vel(next_vel);
                         dp_vel[dp_i + 1][naccel_count][nvel_level] = next_vel;
 
                         dp_passed_lotus[dp_i + 1][naccel_count][nvel_level] = next_passed_lotus;
@@ -265,7 +265,8 @@ public:
                     const int nvel_level = MAX_VEL_LEVEL - 1;
 
 //                     Vec2 acceled_vel = (cur_target_pos - cur_pos).getNormalized(Parameter::CharaAccelSpeed());
-                    Vec2 acceled_vel = (cur_target_pos - cur_pos);
+                    Vec2 acceled_vel = cur_target_pos;
+                    acceled_vel -= cur_pos;
                     acceled_vel.normalize(Parameter::CharaAccelSpeed());
 
                     Vec2 next_pos = acceled_vel;
@@ -366,6 +367,7 @@ using namespace solver;
 int stage_no = -1;
 ActionStrategy action_strategy;
 int prev;
+int cc = 0;
 void Answer::Init(const StageAccessor& aStageAccessor)
 {
     ++stage_no;
@@ -374,16 +376,25 @@ void Answer::Init(const StageAccessor& aStageAccessor)
 //         exit(0);
     action_strategy.reset();
     prev = 0;
+//     dump(cc);
 }
 
 Action Answer::GetNextAction(const StageAccessor& aStageAccessor)
 {
     const Chara& player = aStageAccessor.player();
 
-    if (action_strategy.index() + 1 >= action_strategy.size() * 6 / 10 || !action_strategy.is_equal_strategy(player))
+    if (action_strategy.index() + 1 >= action_strategy.size() * 8 / 10 || !action_strategy.is_equal_strategy(player))
     {
+        if (prev != 0 && action_strategy.index() + 1 < action_strategy.size() * 8 / 10)
+        {
+            ++cc;
+//             dump(player.pos().dist(action_strategy.get_pos()));
+//             dump(player.passedTurn());
+        }
 //         const int turns = solver::min(MAX_SEARCH_TURN - 1, MAX_SEARCH_TURN / 2 + player.passedTurn());
-        const int turns = MAX_SEARCH_TURN - 1;
+        int turns = MAX_SEARCH_TURN - 1;
+//         if (player.passedTurn() - prev < 5)
+//             turns = MAX_SEARCH_TURN / 2;
         action_strategy.search(aStageAccessor, turns);
         prev = player.passedTurn();
     }
