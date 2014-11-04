@@ -106,7 +106,7 @@ bool is_equal(const Vec2& a, const Vec2& b)
     return abs(dx) + abs(dy) < 1e-4;
 }
 
-const int MAX_SEARCH_TURN = 85;
+const int MAX_SEARCH_TURN = 400;
 class ActionStrategy
 {
 public:
@@ -201,7 +201,7 @@ public:
         static Action dp_action[MAX_SEARCH_TURN][CharaAccelCountMax + 1][MAX_VEL_LEVEL];
 
         erep(dp_i, search_turns) erep(accel_count, CharaAccelCountMax) rep(vel_level, MAX_VEL_LEVEL)
-            dp_passed_lotus[dp_i][accel_count][vel_level] = -1;
+            dp_passed_lotus[dp_i][accel_count][vel_level] = -5;
         dp_pos[0][player.accelCount()][0] = player.pos();
         dp_vel[0][player.accelCount()][0] = player.vel();
         dp_passed_lotus[0][player.accelCount()][0] = player.passedLotusCount();
@@ -350,13 +350,13 @@ public:
                  passed_lotus > best_passed_lotus ||
                  (
                   passed_lotus == best_passed_lotus &&
-                  dp_pos[searching_turn][accel_count][vel_level].squareDist(target_pos[passed_lotus % lotuses.count()]) < best_sq_dist
+                  dp_pos[searching_turn][accel_count][vel_level].squareDist(target_pos[target_lotus_table[passed_lotus]]) < best_sq_dist
                  )
                 )
                )
             {
                 best_passed_lotus = passed_lotus;
-                best_sq_dist = dp_pos[searching_turn][accel_count][vel_level].squareDist(target_pos[passed_lotus % lotuses.count()]);
+                best_sq_dist = dp_pos[searching_turn][accel_count][vel_level].squareDist(target_pos[target_lotus_table[passed_lotus]]);
                 best_accel_count = accel_count;
                 best_vel_level = vel_level;
             }
@@ -365,8 +365,8 @@ public:
 
         for (int dp_i = searching_turn, accel_count = best_accel_count, vel_level = best_vel_level; dp_i > 0; --dp_i)
         {
-            cache_pos[dp_i - 1] = dp_pos[dp_i][accel_count][vel_level];
-            cache_vel[dp_i - 1] = dp_vel[dp_i][accel_count][vel_level];
+//             cache_pos[dp_i - 1] = dp_pos[dp_i][accel_count][vel_level];
+//             cache_vel[dp_i - 1] = dp_vel[dp_i][accel_count][vel_level];
             cache_action[dp_i - 1] = dp_action[dp_i][accel_count][vel_level];
 //             cache_accel_count[dp_i - 1] = accel_count;
 
@@ -391,6 +391,7 @@ using namespace solver;
 int stage_no = -1;
 ActionStrategy action_strategy;
 int prev;
+Vec2 next_predicted_pos;
 void Answer::Init(const StageAccessor& aStageAccessor)
 {
     ++stage_no;
@@ -399,13 +400,16 @@ void Answer::Init(const StageAccessor& aStageAccessor)
 //         exit(0);
     action_strategy.reset();
     prev = 0;
+    next_predicted_pos = Vec2(1919, 810);
 }
 
 Action Answer::GetNextAction(const StageAccessor& aStageAccessor)
 {
     const Chara& player = aStageAccessor.player();
 
-    if (action_strategy.index() + 1 >= action_strategy.size() * 8 / 10 || !action_strategy.is_equal_strategy(player))
+    if (action_strategy.index() + 1 >= action_strategy.size() * 8 / 10 ||
+//         !action_strategy.is_equal_strategy(player))
+        !is_equal(player.pos(), next_predicted_pos))
     {
 //         const int turns = solver::min(MAX_SEARCH_TURN - 1, MAX_SEARCH_TURN / 2 + player.passedTurn());
         int turns = MAX_SEARCH_TURN - 1;
@@ -415,8 +419,25 @@ Action Answer::GetNextAction(const StageAccessor& aStageAccessor)
         prev = player.passedTurn();
     }
     else
+    {
+//         assert(player.pos() == next_predicted_pos);
+        assert(is_equal(player.pos(), next_predicted_pos));
         action_strategy.next_turn();
+    }
 
-    return action_strategy.get_action();
+    Action action = action_strategy.get_action();
+    if (action.type() == ActionType_Accel)
+    {
+        next_predicted_pos = player.pos();
+        next_predicted_pos += (action.value() - player.pos()).getNormalized(Parameter::CharaAccelSpeed()) + aStageAccessor.field().flowVel();
+    }
+    else
+    {
+        Chara p = player;
+        p.move();
+        next_predicted_pos = p.pos();
+    }
+
+    return action;
 }
 }
