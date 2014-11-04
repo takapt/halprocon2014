@@ -106,7 +106,7 @@ bool is_equal(const Vec2& a, const Vec2& b)
     return abs(dx) + abs(dy) < 1e-4;
 }
 
-const int MAX_SEARCH_TURN = 400;
+const int MAX_SEARCH_TURN = 200;
 class ActionStrategy
 {
 public:
@@ -123,36 +123,11 @@ public:
     int size() const { return cache_size; }
     int index() const { return cache_i; }
     bool cached_strategy() const { return cache_i < cache_size; }
-    bool is_equal_strategy(const Chara& player)
-    {
-//         assert(player.accelCount() == get_accel_count());
-        return
-//             player.accelCount() == get_accel_count() &&
-//             player.pos() == get_pos() &&
-//             player.vel() == get_vel();
-            is_equal(player.pos(), get_pos()) &&
-            is_equal(player.vel(), get_vel());
-    }
 
     void next_turn()
     {
         ++cache_i;
     }
-    const Vec2& get_pos() const
-    {
-        assert(0 <= cache_i && cache_i < cache_size);
-        return cache_pos[cache_i];
-    }
-    const Vec2& get_vel() const
-    {
-        assert(0 <= cache_i && cache_i < cache_size);
-        return cache_vel[cache_i];
-    }
-//     int get_accel_count() const
-//     {
-//         assert(0 <= cache_i && cache_i < cache_size);
-//         return cache_accel_count[cache_i];
-//     }
 
     const Action& get_action() const
     {
@@ -163,13 +138,10 @@ public:
 private:
     int cache_i;
     int cache_size;
-    Vec2 cache_pos[MAX_SEARCH_TURN];
-    Vec2 cache_vel[MAX_SEARCH_TURN];
-//     int cache_accel_count[MAX_SEARCH_TURN];
     Action cache_action[MAX_SEARCH_TURN];
 
 public:
-    void search(const StageAccessor& stage_accessor, const int search_turns)
+    void search(const StageAccessor& stage_accessor, const int search_turns, const int rem_accel_count)
     {
         assert(0 <= search_turns && search_turns < MAX_SEARCH_TURN);
 
@@ -199,15 +171,17 @@ public:
         static char dp_passed_lotus[MAX_SEARCH_TURN][CharaAccelCountMax + 1][MAX_VEL_LEVEL];
         static ushort dp_prev[MAX_SEARCH_TURN][CharaAccelCountMax + 1][MAX_VEL_LEVEL];
         static Action dp_action[MAX_SEARCH_TURN][CharaAccelCountMax + 1][MAX_VEL_LEVEL];
+        const Action WAIT_ACTION = Action::Wait();
 
-        erep(dp_i, search_turns) erep(accel_count, CharaAccelCountMax) rep(vel_level, MAX_VEL_LEVEL)
+        const int upper_accel_count = min(CharaAccelCountMax, player.accelCount() + (flow ? 3 : 2));
+
+        erep(dp_i, search_turns) erep(accel_count, upper_accel_count) rep(vel_level, MAX_VEL_LEVEL)
             dp_passed_lotus[dp_i][accel_count][vel_level] = -5;
         dp_pos[0][player.accelCount()][0] = player.pos();
         dp_vel[0][player.accelCount()][0] = player.vel();
         dp_passed_lotus[0][player.accelCount()][0] = player.passedLotusCount();
         dp_prev[0][player.accelCount()][0] = 0;
 
-        const Action WAIT_ACTION = Action::Wait();
 
         int target_lotus_table[Parameter::LotusCountMax * Parameter::StageRoundCount + 1];
         rep(passed_lotus, lotuses.count() * Parameter::StageRoundCount + 1)
@@ -215,121 +189,124 @@ public:
 
         int searching_turn = 0;
         int accel_wait_turn = player.accelWaitTurn();
-        for (int dp_i = 0; dp_i < search_turns; ++dp_i)
+        rep(dp_i, search_turns)
         {
             const int add_accel_count = --accel_wait_turn == 0;
             if (accel_wait_turn == 0)
                 accel_wait_turn = CharaAccelCountMax + 1;
 
             bool found_goal = false;
-            erep(accel_count, CharaAccelCountMax) rep(vel_level, MAX_VEL_LEVEL)
+            for (int accel_count = upper_accel_count; accel_count >= 0; --accel_count)
+//             for (int accel_count = 0; accel_count <= upper_accel_count; ++accel_count)
             {
-                if (dp_passed_lotus[dp_i][accel_count][vel_level] < 0)
-                    continue;
-
-                const int passed_lotus = dp_passed_lotus[dp_i][accel_count][vel_level];
-//                 const int target_lotus = passed_lotus % lotuses.count();
-                const int target_lotus = target_lotus_table[passed_lotus];
-                const Vec2& cur_target_pos = target_pos[target_lotus];
-
-                const Vec2& cur_pos = dp_pos[dp_i][accel_count][vel_level];
-                const Vec2& cur_vel = dp_vel[dp_i][accel_count][vel_level];
-
-                // wait
+                for (int vel_level = MAX_VEL_LEVEL - 1; vel_level >= 0; --vel_level)
+//                 for (int vel_level = 0; vel_level < MAX_VEL_LEVEL; ++vel_level)
                 {
-                    const int naccel_count = min(CharaAccelCountMax, accel_count + add_accel_count);
-                    const int nvel_level = max(0, vel_level - 1);
+                    if (dp_passed_lotus[dp_i][accel_count][vel_level] < 0)
+                        continue;
 
-                    Vec2 next_pos = cur_vel;
-                    next_pos.y += field.flowVel().y;
-                    next_pos += cur_pos;
+                    const int passed_lotus = dp_passed_lotus[dp_i][accel_count][vel_level];
+                    const int target_lotus = target_lotus_table[passed_lotus];
+                    const Vec2& cur_target_pos = target_pos[target_lotus];
 
-                    const int next_passed_lotus = passed_lotus + (next_pos.squareDist(lotuses[target_lotus].pos()) < collision_squared_dist[target_lotus]);
-//                     const int next_target_lotus = next_passed_lotus % lotuses.count();
-                    const int next_target_lotus = target_lotus_table[next_passed_lotus];
+                    const Vec2& cur_pos = dp_pos[dp_i][accel_count][vel_level];
+                    const Vec2& cur_vel = dp_vel[dp_i][accel_count][vel_level];
 
-                    Vec2 next_target_pos = target_pos[next_target_lotus];
-                    if (flow)
-                        next_target_pos.y -= cur_pos.dist(target_pos[next_target_lotus]) * flow_vel_y;
-
-                    if (
-                        (
-                             next_passed_lotus > dp_passed_lotus[dp_i + 1][naccel_count][nvel_level] ||
-                             (
-                              next_passed_lotus == dp_passed_lotus[dp_i + 1][naccel_count][nvel_level] &&
-                              next_pos.squareDist(next_target_pos) < dp_pos[dp_i + 1][naccel_count][nvel_level].squareDist(next_target_pos)
-                             )
-                        )
-                       )
+                    // wait
                     {
+                        const int naccel_count = min(CharaAccelCountMax, accel_count + add_accel_count);
+                        const int nvel_level = max(0, vel_level - 1);
+
+                        Vec2 next_pos = cur_vel;
+                        next_pos.y += field.flowVel().y;
+                        next_pos += cur_pos;
+
+                        const int next_passed_lotus = passed_lotus + (next_pos.squareDist(lotuses[target_lotus].pos()) < collision_squared_dist[target_lotus]);
+                        const int next_target_lotus = target_lotus_table[next_passed_lotus];
+
+                        Vec2 next_target_pos = target_pos[next_target_lotus];
+                        if (flow)
+                            next_target_pos.y -= cur_pos.dist(target_pos[next_target_lotus]) * flow_vel_y;
+
+                        if (
+                                (
+                                 next_passed_lotus > dp_passed_lotus[dp_i + 1][naccel_count][nvel_level] ||
+                                 (
+                                  next_passed_lotus == dp_passed_lotus[dp_i + 1][naccel_count][nvel_level] &&
+                                  next_pos.squareDist(next_target_pos) < dp_pos[dp_i + 1][naccel_count][nvel_level].squareDist(next_target_pos)
+                                 )
+                                )
+                           )
+                        {
+                            assert(0 <= naccel_count && naccel_count <= CharaAccelCountMax);
+                            assert(0 <= nvel_level && nvel_level <= MAX_VEL_LEVEL);
+
+                            dp_pos[dp_i + 1][naccel_count][nvel_level] = next_pos;
+
+                            //                         dp_vel[dp_i + 1][naccel_count][nvel_level] = decel_vel(cur_vel);
+                            Vec2 next_vel = cur_vel;
+                            decel_vel(next_vel, vel_level);
+                            dp_vel[dp_i + 1][naccel_count][nvel_level] = next_vel;
+
+                            dp_passed_lotus[dp_i + 1][naccel_count][nvel_level] = next_passed_lotus;
+                            dp_prev[dp_i + 1][naccel_count][nvel_level] = pcc(accel_count, vel_level);
+                            dp_action[dp_i + 1][naccel_count][nvel_level] = WAIT_ACTION;
+
+                            if (next_passed_lotus == lotuses.count() * Parameter::StageRoundCount)
+                                found_goal = true;
+                        }
+                    }
+
+                    // accel
+                    if (accel_count > 0)
+                    {
+                        const int naccel_count = min(CharaAccelCountMax, accel_count - 1 + add_accel_count);
+                        const int nvel_level = MAX_VEL_LEVEL - 1;
+
+                        //                     Vec2 acceled_vel = (cur_target_pos - cur_pos).getNormalized(Parameter::CharaAccelSpeed());
+                        Vec2 acceled_vel = cur_target_pos;
+                        acceled_vel -= cur_pos;
+                        acceled_vel.normalize(Parameter::CharaAccelSpeed());
+
+                        Vec2 next_pos = acceled_vel;
+                        next_pos.y += flow_vel_y;
+                        next_pos += cur_pos;
+
+                        const int next_passed_lotus = passed_lotus + (next_pos.squareDist(lotuses[target_lotus].pos()) < collision_squared_dist[target_lotus]);
+                        //                     const int next_target_lotus = next_passed_lotus % lotuses.count();
+                        const int next_target_lotus = target_lotus_table[next_passed_lotus];
+
+                        Vec2 next_target_pos = target_pos[next_target_lotus];
+                        if (flow)
+                            next_target_pos.y -= cur_pos.dist(target_pos[next_target_lotus]) * flow_vel_y;
+
                         assert(0 <= naccel_count && naccel_count <= CharaAccelCountMax);
                         assert(0 <= nvel_level && nvel_level <= MAX_VEL_LEVEL);
 
-                        dp_pos[dp_i + 1][naccel_count][nvel_level] = next_pos;
+                        if (
+                                (
+                                 next_passed_lotus > dp_passed_lotus[dp_i + 1][naccel_count][nvel_level] ||
+                                 (
+                                  next_passed_lotus == dp_passed_lotus[dp_i + 1][naccel_count][nvel_level] &&
+                                  next_pos.squareDist(next_target_pos) < dp_pos[dp_i + 1][naccel_count][nvel_level].squareDist(next_target_pos)
+                                 )
+                                )
+                           )
+                        {
+                            dp_pos[dp_i + 1][naccel_count][nvel_level] = next_pos;
 
-//                         dp_vel[dp_i + 1][naccel_count][nvel_level] = decel_vel(cur_vel);
-                        Vec2 next_vel = cur_vel;
-                        decel_vel(next_vel, vel_level);
-                        dp_vel[dp_i + 1][naccel_count][nvel_level] = next_vel;
+                            //                         dp_vel[dp_i + 1][naccel_count][nvel_level] = decel_vel(acceled_vel);
+                            //                         decel_vel(acceled_vel);
+                            decel_vel(acceled_vel, MAX_VEL_LEVEL);
+                            dp_vel[dp_i + 1][naccel_count][nvel_level] = acceled_vel;
 
-                        dp_passed_lotus[dp_i + 1][naccel_count][nvel_level] = next_passed_lotus;
-                        dp_prev[dp_i + 1][naccel_count][nvel_level] = pcc(accel_count, vel_level);
-                        dp_action[dp_i + 1][naccel_count][nvel_level] = WAIT_ACTION;
+                            dp_passed_lotus[dp_i + 1][naccel_count][nvel_level] = next_passed_lotus;
+                            dp_prev[dp_i + 1][naccel_count][nvel_level] = pcc(accel_count, vel_level);
+                            dp_action[dp_i + 1][naccel_count][nvel_level] = Action::Accel(cur_target_pos);
 
-                        if (next_passed_lotus == lotuses.count() * Parameter::StageRoundCount)
-                            found_goal = true;
-                    }
-                }
-
-                // accel
-                if (accel_count > 0)
-                {
-                    const int naccel_count = min(CharaAccelCountMax, accel_count - 1 + add_accel_count);
-                    const int nvel_level = MAX_VEL_LEVEL - 1;
-
-//                     Vec2 acceled_vel = (cur_target_pos - cur_pos).getNormalized(Parameter::CharaAccelSpeed());
-                    Vec2 acceled_vel = cur_target_pos;
-                    acceled_vel -= cur_pos;
-                    acceled_vel.normalize(Parameter::CharaAccelSpeed());
-
-                    Vec2 next_pos = acceled_vel;
-                    next_pos.y += flow_vel_y;
-                    next_pos += cur_pos;
-
-                    const int next_passed_lotus = passed_lotus + (next_pos.squareDist(lotuses[target_lotus].pos()) < collision_squared_dist[target_lotus]);
-//                     const int next_target_lotus = next_passed_lotus % lotuses.count();
-                    const int next_target_lotus = target_lotus_table[next_passed_lotus];
-
-                    Vec2 next_target_pos = target_pos[next_target_lotus];
-                    if (flow)
-                        next_target_pos.y -= cur_pos.dist(target_pos[next_target_lotus]) * flow_vel_y;
-
-                    assert(0 <= naccel_count && naccel_count <= CharaAccelCountMax);
-                    assert(0 <= nvel_level && nvel_level <= MAX_VEL_LEVEL);
-
-                    if (
-                        (
-                         next_passed_lotus > dp_passed_lotus[dp_i + 1][naccel_count][nvel_level] ||
-                         (
-                          next_passed_lotus == dp_passed_lotus[dp_i + 1][naccel_count][nvel_level] &&
-                          next_pos.squareDist(next_target_pos) < dp_pos[dp_i + 1][naccel_count][nvel_level].squareDist(next_target_pos)
-                         )
-                        )
-                       )
-                    {
-                        dp_pos[dp_i + 1][naccel_count][nvel_level] = next_pos;
-
-//                         dp_vel[dp_i + 1][naccel_count][nvel_level] = decel_vel(acceled_vel);
-//                         decel_vel(acceled_vel);
-                        decel_vel(acceled_vel, MAX_VEL_LEVEL);
-                        dp_vel[dp_i + 1][naccel_count][nvel_level] = acceled_vel;
-
-                        dp_passed_lotus[dp_i + 1][naccel_count][nvel_level] = next_passed_lotus;
-                        dp_prev[dp_i + 1][naccel_count][nvel_level] = pcc(accel_count, vel_level);
-                        dp_action[dp_i + 1][naccel_count][nvel_level] = Action::Accel(cur_target_pos);
-
-                        if (next_passed_lotus == lotuses.count() * Parameter::StageRoundCount)
-                            found_goal = true;
+                            if (next_passed_lotus == lotuses.count() * Parameter::StageRoundCount)
+                                found_goal = true;
+                        }
                     }
                 }
             }
@@ -343,32 +320,33 @@ public:
         int best_passed_lotus = -2;
         float best_sq_dist = -1;
         int best_accel_count = -1, best_vel_level = -1;
-        erep(accel_count, CharaAccelCountMax) rep(vel_level, MAX_VEL_LEVEL)
+//         erep(accel_count, CharaAccelCountMax) rep(vel_level, MAX_VEL_LEVEL)
+        for (int accel_count = rem_accel_count; accel_count <= upper_accel_count; ++accel_count)
         {
-            const int passed_lotus = dp_passed_lotus[searching_turn][accel_count][vel_level];
-            if ((
-                 passed_lotus > best_passed_lotus ||
-                 (
-                  passed_lotus == best_passed_lotus &&
-                  dp_pos[searching_turn][accel_count][vel_level].squareDist(target_pos[target_lotus_table[passed_lotus]]) < best_sq_dist
-                 )
-                )
-               )
+            rep(vel_level, MAX_VEL_LEVEL)
             {
-                best_passed_lotus = passed_lotus;
-                best_sq_dist = dp_pos[searching_turn][accel_count][vel_level].squareDist(target_pos[target_lotus_table[passed_lotus]]);
-                best_accel_count = accel_count;
-                best_vel_level = vel_level;
+                const int passed_lotus = dp_passed_lotus[searching_turn][accel_count][vel_level];
+                if ((
+                            passed_lotus > best_passed_lotus ||
+                            (
+                             passed_lotus == best_passed_lotus &&
+                             dp_pos[searching_turn][accel_count][vel_level].squareDist(target_pos[target_lotus_table[passed_lotus]]) < best_sq_dist
+                            )
+                    )
+                   )
+                {
+                    best_passed_lotus = passed_lotus;
+                    best_sq_dist = dp_pos[searching_turn][accel_count][vel_level].squareDist(target_pos[target_lotus_table[passed_lotus]]);
+                    best_accel_count = accel_count;
+                    best_vel_level = vel_level;
+                }
             }
         }
         assert(best_passed_lotus != -2);
 
         for (int dp_i = searching_turn, accel_count = best_accel_count, vel_level = best_vel_level; dp_i > 0; --dp_i)
         {
-//             cache_pos[dp_i - 1] = dp_pos[dp_i][accel_count][vel_level];
-//             cache_vel[dp_i - 1] = dp_vel[dp_i][accel_count][vel_level];
             cache_action[dp_i - 1] = dp_action[dp_i][accel_count][vel_level];
-//             cache_accel_count[dp_i - 1] = accel_count;
 
             int paccel_count = pcc_first(dp_prev[dp_i][accel_count][vel_level]);
             int pvel_level = pcc_second(dp_prev[dp_i][accel_count][vel_level]);
@@ -408,14 +386,11 @@ Action Answer::GetNextAction(const StageAccessor& aStageAccessor)
     const Chara& player = aStageAccessor.player();
 
     if (action_strategy.index() + 1 >= action_strategy.size() * 8 / 10 ||
-//         !action_strategy.is_equal_strategy(player))
         !is_equal(player.pos(), next_predicted_pos))
     {
-//         const int turns = solver::min(MAX_SEARCH_TURN - 1, MAX_SEARCH_TURN / 2 + player.passedTurn());
-        int turns = MAX_SEARCH_TURN - 1;
-//         if (player.passedTurn() - prev < 5)
-//             turns = MAX_SEARCH_TURN / 2;
-        action_strategy.search(aStageAccessor, turns);
+        int search_turns = MAX_SEARCH_TURN - 1;
+        int rem_accel_count = 0;
+        action_strategy.search(aStageAccessor, search_turns, rem_accel_count);
         prev = player.passedTurn();
     }
     else
