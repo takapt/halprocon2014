@@ -108,7 +108,6 @@ bool is_equal(const Vec2& a, const Vec2& b)
 
 void search_path(const StageAccessor& stage_accessor, Vec2* target_pos)
 {
-    const Chara& player = stage_accessor.player();
     const LotusCollection& lotuses = stage_accessor.lotuses();
 
     rep(target_lotus, lotuses.count())
@@ -120,65 +119,6 @@ void search_path(const StageAccessor& stage_accessor, Vec2* target_pos)
 
         for (int i = 1; i < 3; ++i)
             target_pos[target_lotus + i * lotuses.count()] = target_pos[target_lotus];
-    }
-
-    const int max_passed_lotus = lotuses.count() * Parameter::StageRoundCount;
-
-    const int MAX_CAND_SIZE = 128;
-    Vec2 cand_pos[Parameter::LotusCountMax][MAX_CAND_SIZE];
-    rep(lotus_i, lotuses.count())
-    {
-        const float radius = lotuses[lotus_i].radius() + Parameter::CharaRadius() - 1e-6;
-
-        rep(cand_i, MAX_CAND_SIZE - 1)
-        {
-            const float angle = (2 * Math::PI) * cand_i / (MAX_CAND_SIZE - 1);
-            cand_pos[lotus_i][cand_i] = lotuses[lotus_i].pos() + Vec2(radius * Math::Cos(angle), radius * Math::Sin(angle));
-        }
-    }
-
-    const float inf = 1e9;
-    static float dp[Parameter::LotusCountMax * Parameter::StageRoundCount][MAX_CAND_SIZE];
-    static int prev[Parameter::LotusCountMax * Parameter::StageRoundCount][MAX_CAND_SIZE];
-    rep(dp_i, max_passed_lotus) rep(cand_i, MAX_CAND_SIZE)
-        dp[dp_i][cand_i] = inf;
-    rep(cand_i, MAX_CAND_SIZE)
-        dp[0][cand_i] = player.pos().dist(cand_pos[0][cand_i]);
-
-    rep(dp_i, max_passed_lotus)
-    {
-        const int cur_lotus = dp_i % lotuses.count();
-        const int next_lotus = (dp_i + 1) % lotuses.count();
-        rep(cand_i, MAX_CAND_SIZE) rep(cand_j, MAX_CAND_SIZE)
-        {
-            const float d = dp[dp_i][cand_i] + cand_pos[cur_lotus][cand_i].dist(cand_pos[next_lotus][cand_j]);
-            if (d < dp[dp_i + 1][cand_j])
-            {
-                dp[dp_i + 1][cand_j] = d;
-                prev[dp_i + 1][cand_j] = cand_i;
-            }
-        }
-    }
-
-    float best_dist = inf;
-    int best_cand_i = -1;
-    rep(cand_i, MAX_CAND_SIZE)
-    {
-        if (dp[max_passed_lotus - 1][cand_i] < best_dist)
-        {
-            best_dist = dp[max_passed_lotus - 1][cand_i];
-            best_cand_i = cand_i;
-        }
-    }
-    assert(best_cand_i != -1);
-    dump(best_dist);
-
-    for (int dp_i = max_passed_lotus - 1, cand_i = best_cand_i; dp_i >= 0; --dp_i)
-    {
-        const int lotus = dp_i % lotuses.count();
-        target_pos[dp_i] = cand_pos[lotus][cand_i];
-
-        cand_i = prev[dp_i][cand_i];
     }
 }
 
@@ -246,6 +186,7 @@ public:
         const Action WAIT_ACTION = Action::Wait();
 
         const int upper_accel_count = min(CharaAccelCountMax, player.accelCount() + (flow ? 3 : 2));
+//         const int upper_accel_count = CharaAccelCountMax;
 
         erep(dp_i, search_turns) erep(accel_count, upper_accel_count) rep(vel_level, MAX_VEL_LEVEL)
             dp_passed_lotus[dp_i][accel_count][vel_level] = -5;
@@ -279,7 +220,6 @@ public:
 
                     const int passed_lotus = dp_passed_lotus[dp_i][accel_count][vel_level];
                     const int target_lotus = target_lotus_table[passed_lotus];
-//                     const Vec2& cur_target_pos = target_pos[target_lotus];
                     const Vec2& cur_target_pos = target_pos[passed_lotus];
 
                     const Vec2& cur_pos = dp_pos[dp_i][accel_count][vel_level];
@@ -295,12 +235,9 @@ public:
                         next_pos += cur_pos;
 
                         const int next_passed_lotus = passed_lotus + (next_pos.squareDist(lotuses[target_lotus].pos()) < collision_squared_dist[target_lotus]);
-//                         const int next_target_lotus = target_lotus_table[next_passed_lotus];
 
-//                         Vec2 next_target_pos = target_pos[next_target_lotus];
                         Vec2 next_target_pos = target_pos[next_passed_lotus];
                         if (flow)
-//                             next_target_pos.y -= cur_pos.dist(target_pos[next_target_lotus]) * flow_vel_y;
                             next_target_pos.y -= cur_pos.dist(target_pos[next_passed_lotus]) * flow_vel_y;
 
                         if (
@@ -347,14 +284,9 @@ public:
                         next_pos += cur_pos;
 
                         const int next_passed_lotus = passed_lotus + (next_pos.squareDist(lotuses[target_lotus].pos()) < collision_squared_dist[target_lotus]);
-//                         const int next_target_lotus = target_lotus_table[next_passed_lotus];
 
-//                         Vec2 next_target_pos = target_pos[next_target_lotus];
-//                         if (flow)
-//                             next_target_pos.y -= cur_pos.dist(target_pos[next_target_lotus]) * flow_vel_y;
                         Vec2 next_target_pos = target_pos[next_passed_lotus];
                         if (flow)
-//                             next_target_pos.y -= cur_pos.dist(target_pos[next_target_lotus]) * flow_vel_y;
                             next_target_pos.y -= cur_pos.dist(target_pos[next_passed_lotus]) * flow_vel_y;
 
                         assert(0 <= naccel_count && naccel_count <= CharaAccelCountMax);
@@ -405,14 +337,12 @@ public:
                             passed_lotus > best_passed_lotus ||
                             (
                              passed_lotus == best_passed_lotus &&
-//                              dp_pos[searching_turn][accel_count][vel_level].squareDist(target_pos[target_lotus_table[passed_lotus]]) < best_sq_dist
                              dp_pos[searching_turn][accel_count][vel_level].squareDist(target_pos[passed_lotus]) < best_sq_dist
                             )
                     )
                    )
                 {
                     best_passed_lotus = passed_lotus;
-//                     best_sq_dist = dp_pos[searching_turn][accel_count][vel_level].squareDist(target_pos[target_lotus_table[passed_lotus]]);
                     best_sq_dist = dp_pos[searching_turn][accel_count][vel_level].squareDist(target_pos[passed_lotus]);
                     best_accel_count = accel_count;
                     best_vel_level = vel_level;
@@ -473,7 +403,6 @@ Action Answer::GetNextAction(const StageAccessor& aStageAccessor)
     {
         int search_turns = MAX_SEARCH_TURN - 1;
         int rem_accel_count = 0;
-//         action_strategy.search(aStageAccessor, search_turns, rem_accel_count);
         action_strategy.search(aStageAccessor, target_pos, search_turns, rem_accel_count);
         prev = player.passedTurn();
     }
