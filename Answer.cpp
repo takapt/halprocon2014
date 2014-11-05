@@ -185,7 +185,7 @@ public:
         static Action dp_action[MAX_SEARCH_TURN][CharaAccelCountMax + 1][MAX_VEL_LEVEL];
         const Action WAIT_ACTION = Action::Wait();
 
-        const int upper_accel_count = min(CharaAccelCountMax, player.accelCount() + (flow ? 4 : 2));
+        const int upper_accel_count = min(CharaAccelCountMax, player.accelCount() + (flow ? 3 : 2));
 //         const int upper_accel_count = CharaAccelCountMax;
 
         erep(dp_i, search_turns) erep(accel_count, upper_accel_count) rep(vel_level, MAX_VEL_LEVEL)
@@ -398,16 +398,16 @@ Action Answer::GetNextAction(const StageAccessor& aStageAccessor)
 {
     const Chara& player = aStageAccessor.player();
 
-    if (action_strategy.index() + 1 >= action_strategy.size() * 8 / 10 ||
+    if (action_strategy.index() + 1 >= action_strategy.size() * 9 / 10 ||
         !is_equal(player.pos(), next_predicted_pos))
     {
         int search_turns = MAX_SEARCH_TURN - 1;
         int rem_accel_count = 0;
-//         if (player.passedTurn() - prev <= 2)
-//         {
-//             search_turns = MAX_SEARCH_TURN / 2;
-//             rem_accel_count = solver::min(solver::max(0, player.accelCount() - 1), 2);
-//         }
+        if (player.passedTurn() - prev <= 5)
+        {
+            search_turns = MAX_SEARCH_TURN / 2;
+            rem_accel_count = solver::min(solver::max(0, player.accelCount() - 1), 2);
+        }
 //         rem_accel_count = solver::min(solver::max(0, player.accelCount() - 3), 1);
         action_strategy.search(aStageAccessor, target_pos, search_turns, rem_accel_count);
         prev = player.passedTurn();
