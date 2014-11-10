@@ -1,6 +1,6 @@
 #include "HPCAnswerInclude.hpp"
 
-// #undef LOCAL
+#undef LOCAL
 #ifdef LOCAL
 #include "local.h"
 using namespace std;
@@ -123,7 +123,7 @@ void search_path(const StageAccessor& stage_accessor, Vec2* target_pos)
 }
 
 
-const int MAX_SEARCH_TURN = 180;
+const int MAX_SEARCH_TURN = 405;
 class ActionStrategy
 {
 public:
@@ -373,6 +373,8 @@ namespace hpc
 {
 using namespace solver;
 
+int cc = 0;
+
 int stage_no = -1;
 
 ActionStrategy action_strategy;
@@ -386,6 +388,8 @@ void Answer::Init(const StageAccessor& aStageAccessor)
 //     dump(stage_no);
 //     if (stage_no > 0)
 //         exit(0);
+//     dump(cc);
+    cc = 0;
 
     search_path(aStageAccessor, target_pos);
 
@@ -398,16 +402,21 @@ Action Answer::GetNextAction(const StageAccessor& aStageAccessor)
 {
     const Chara& player = aStageAccessor.player();
 
-    if (action_strategy.index() + 1 >= action_strategy.size() * 9 / 10 ||
+    if (player.passedTurn() > 0 && !is_equal(player.pos(), next_predicted_pos))
+        ++cc;
+
+    if (action_strategy.index() + 1 >= action_strategy.size() * 6 / 10 ||
         !is_equal(player.pos(), next_predicted_pos))
     {
         int search_turns = MAX_SEARCH_TURN - 1;
         int rem_accel_count = 0;
-        if (player.passedTurn() - prev <= 5)
-        {
-            search_turns = MAX_SEARCH_TURN / 2;
-            rem_accel_count = solver::min(solver::max(0, player.accelCount() - 1), 2);
-        }
+//         if (player.passedTurn() - prev <= 5)
+//         {
+//             search_turns = MAX_SEARCH_TURN / 2;
+//             rem_accel_count = solver::min(solver::max(0, player.accelCount() - 3), 6);
+//         }
+//         rem_accel_count = solver::min(solver::max(0, player.accelCount() - 2), 6);
+
 //         rem_accel_count = solver::min(solver::max(0, player.accelCount() - 3), 1);
         action_strategy.search(aStageAccessor, target_pos, search_turns, rem_accel_count);
         prev = player.passedTurn();
